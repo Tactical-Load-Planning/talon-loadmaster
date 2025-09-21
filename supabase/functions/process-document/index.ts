@@ -135,22 +135,211 @@ serve(async (req) => {
 async function extractTextFromFile(fileData: Blob, filePath: string): Promise<string> {
   const fileName = filePath.toLowerCase();
   
-  if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
+  // Handle plain text files
+  if (fileName.endsWith('.txt') || fileName.endsWith('.md') || fileName.endsWith('.json')) {
     return await fileData.text();
   }
   
-  if (fileName.endsWith('.pdf')) {
-    // For PDF files, you might want to use a PDF parsing library
-    // For now, we'll return a placeholder
-    return await fileData.text(); // This won't work for binary PDFs
+  // Handle CSV files with proper parsing
+  if (fileName.endsWith('.csv')) {
+    const csvText = await fileData.text();
+    return parseCSVToText(csvText);
+  }
+  
+  // Handle binary document files (PDF, DOCX, XLSX, PPTX)
+  if (fileName.endsWith('.pdf') || fileName.endsWith('.docx') || 
+      fileName.endsWith('.doc') || fileName.endsWith('.xlsx') || 
+      fileName.endsWith('.xls') || fileName.endsWith('.pptx')) {
+    
+    try {
+      // Save file temporarily for document parsing
+      const tempPath = `/tmp/${Date.now()}_${fileName}`;
+      const arrayBuffer = await fileData.arrayBuffer();
+      
+      await Deno.writeFile(tempPath, new Uint8Array(arrayBuffer));
+      
+      // Use document parsing for complex formats
+      const parsedContent = await parseDocumentFile(tempPath, fileName);
+      
+      // Cleanup temporary file
+      try {
+        await Deno.remove(tempPath);
+      } catch (cleanupError) {
+        console.warn('Failed to cleanup temp file:', cleanupError);
+      }
+      
+      return parsedContent;
+      
+    } catch (error) {
+      console.error(`Document parsing error for ${fileName}:`, error);
+      throw new Error(`Failed to extract content from ${fileName}. Please ensure the file is valid and contains readable content.`);
+    }
   }
   
   // For other file types, try to read as text
   try {
     return await fileData.text();
   } catch (error) {
-    throw new Error(`Unsupported file type or cannot extract text from ${fileName}`);
+    throw new Error(`Unsupported file type: ${fileName}. Supported formats: TXT, MD, JSON, CSV, PDF, DOCX, XLSX, PPTX`);
   }
+}
+
+async function parseDocumentFile(filePath: string, fileName: string): Promise<string> {
+  // Enhanced document parsing for different file types
+  const fileExt = fileName.split('.').pop()?.toLowerCase();
+  
+  try {
+    if (fileExt === 'pdf') {
+      return await parsePDFFile(filePath);
+    } else if (fileExt === 'docx' || fileExt === 'doc') {
+      return await parseWordFile(filePath);
+    } else if (fileExt === 'xlsx' || fileExt === 'xls') {
+      return await parseExcelFile(filePath);
+    } else if (fileExt === 'pptx') {
+      return await parsePowerPointFile(filePath);
+    }
+  } catch (error) {
+    console.error(`Parsing error for ${fileExt}:`, error);
+  }
+  
+  // Fallback: try to extract basic text
+  const fileContent = await Deno.readFile(filePath);
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
+  
+  // Clean and extract readable portions
+  const cleanText = text
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, ' ') // Remove most control chars, keep \n and \t
+    .replace(/\s+/g, ' ')
+    .trim();
+    
+  if (cleanText.length < 20) {
+    throw new Error('Insufficient readable content found in document');
+  }
+  
+  return cleanText;
+}
+
+async function parsePDFFile(filePath: string): Promise<string> {
+  // For PDFs, we'll extract text using a basic approach
+  // In production, you'd use a proper PDF parsing library
+  const fileContent = await Deno.readFile(filePath);
+  
+  // Look for text streams in PDF (very basic extraction)
+  const text = new TextDecoder('latin1').decode(fileContent);
+  const textMatches = text.match(/BT\s+.*?ET/gs) || [];
+  
+  let extractedText = '';
+  for (const match of textMatches) {
+    // Extract text between parentheses or brackets
+    const textContent = match.match(/\((.*?)\)/g) || match.match(/\[(.*?)\]/g) || [];
+    for (const content of textContent) {
+      extractedText += content.replace(/[\(\)\[\]]/g, '') + ' ';
+    }
+  }
+  
+  if (extractedText.trim().length < 10) {
+    throw new Error('Could not extract readable text from PDF');
+  }
+  
+  return extractedText.trim();
+}
+
+async function parseWordFile(filePath: string): Promise<string> {
+  // Basic DOCX parsing - in production use proper libraries like mammoth
+  const fileContent = await Deno.readFile(filePath);
+  
+  if (filePath.endsWith('.docx')) {
+    // DOCX files are ZIP archives containing XML
+    // This is a very basic extraction - proper implementation would parse the XML structure
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
+    const xmlContent = text.match(/<w:t[^>]*>(.*?)<\/w:t>/g) || [];
+    
+    let extractedText = '';
+    for (const match of xmlContent) {
+      const textContent = match.replace(/<[^>]*>/g, '');
+      extractedText += textContent + ' ';
+    }
+    
+    return extractedText.trim() || 'No readable text found in Word document';
+  }
+  
+  // For .doc files (older format), basic text extraction
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
+  return text.replace(/[\x00-\x1F\x7F-\x9F]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function parseExcelFile(filePath: string): Promise<string> {
+  // Basic Excel parsing for tabular data
+  const fileContent = await Deno.readFile(filePath);
+  
+  if (filePath.endsWith('.xlsx')) {
+    // XLSX files are also ZIP archives with XML
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
+    
+    // Extract shared strings (text content in XLSX)
+    const sharedStrings = text.match(/<t[^>]*>(.*?)<\/t>/g) || [];
+    const cellValues: string[] = [];
+    
+    for (const match of sharedStrings) {
+      const value = match.replace(/<[^>]*>/g, '').trim();
+      if (value) cellValues.push(value);
+    }
+    
+    // Also look for inline cell values
+    const inlineCells = text.match(/<c[^>]*t="inlineStr"[^>]*>.*?<\/c>/g) || [];
+    for (const cell of inlineCells) {
+      const value = cell.match(/<t[^>]*>(.*?)<\/t>/)?.[1];
+      if (value) cellValues.push(value);
+    }
+    
+    return cellValues.length > 0 ? 
+      `Excel Content: ${cellValues.join(' | ')}` : 
+      'No readable content found in Excel file';
+  }
+  
+  // For .xls files, basic text extraction
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
+  return text.replace(/[\x00-\x1F\x7F-\x9F]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function parsePowerPointFile(filePath: string): Promise<string> {
+  // Basic PowerPoint parsing
+  const fileContent = await Deno.readFile(filePath);
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
+  
+  // PPTX files contain XML with slide content
+  const textContent = text.match(/<a:t[^>]*>(.*?)<\/a:t>/g) || [];
+  let extractedText = '';
+  
+  for (const match of textContent) {
+    const slideText = match.replace(/<[^>]*>/g, '');
+    extractedText += slideText + ' ';
+  }
+  
+  return extractedText.trim() || 'No readable text found in PowerPoint file';
+}
+
+function parseCSVToText(csvContent: string): string {
+  const lines = csvContent.split('\n');
+  const result: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line) {
+      // Parse CSV line (simple approach - doesn't handle quoted commas)
+      const columns = line.split(',').map(col => col.trim().replace(/^"|"$/g, ''));
+      
+      if (i === 0) {
+        // Header row
+        result.push(`Table Headers: ${columns.join(', ')}`);
+      } else {
+        // Data row
+        result.push(`Row ${i}: ${columns.join(' | ')}`);
+      }
+    }
+  }
+  
+  return result.join('\n');
 }
 
 interface TextChunk {

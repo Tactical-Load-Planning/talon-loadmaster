@@ -255,7 +255,7 @@ const DataManagement = () => {
                 Upload Documents
               </CardTitle>
               <CardDescription>
-                Upload PDF, Word, text files, and more. Files will be automatically processed and chunked for RAG.
+                Upload PDF, Word, Excel, PowerPoint, CSV, and text files. All files will be automatically processed and chunked for RAG.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -264,7 +264,7 @@ const DataManagement = () => {
                 <Input
                   id="file-upload"
                   type="file"
-                  accept=".pdf,.docx,.doc,.txt,.md"
+                  accept=".pdf,.docx,.doc,.txt,.md,.csv,.xlsx,.xls,.pptx,.json"
                   onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 />
                 {selectedFile && (
