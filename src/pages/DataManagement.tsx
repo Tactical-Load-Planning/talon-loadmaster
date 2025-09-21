@@ -182,11 +182,25 @@ const DataManagement = () => {
 
   const processDocument = async (documentId: string, filePath: string) => {
     try {
-      await supabase.functions.invoke('process-document', {
+      const { data, error } = await supabase.functions.invoke('process-document', {
         body: { documentId, filePath }
       });
-    } catch (error) {
+      
+      if (error) {
+        console.error('Edge function error:', error);
+        toast({
+          variant: "destructive",
+          title: "Document processing failed",
+          description: "There was an error processing your document. Please try again with a different file format."
+        });
+      }
+    } catch (error: any) {
       console.error('Failed to process document:', error);
+      toast({
+        variant: "destructive", 
+        title: "Document processing failed",
+        description: error.message || "Please try again with a different file format."
+      });
     }
   };
 
