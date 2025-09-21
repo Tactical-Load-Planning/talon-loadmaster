@@ -1,1 +1,13 @@
 project_id = "cppddpkcyroxcisgshek"
+
+[functions.process-document]
+verify_jwt = false
+
+[functions.process-url]
+verify_jwt = true
+
+[functions.add-manual-knowledge] 
+verify_jwt = true
+
+[functions.chat-with-talon]
+verify_jwt = true
