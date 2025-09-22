@@ -10,6 +10,7 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const openAIApiKey = Deno.env.get('OPENAI_API_KEY')!;
+const unstructuredApiKey = Deno.env.get('UNSTRUCTURED_API_KEY');
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -43,17 +44,20 @@ serve(async (req) => {
       throw new Error(`Failed to download file: ${downloadError.message}`);
     }
 
-    // Convert file to text based on type
-    const text = await extractTextFromFile(fileData, filePath);
+    // Convert file to Markdown using Unstructured.io
+    console.log('Converting file to Markdown using Unstructured.io...');
+    const markdownContent = await convertToMarkdownWithUnstructured(fileData, filePath);
     
-    if (!text || text.trim().length === 0) {
-      throw new Error('No text content could be extracted from the file');
+    if (!markdownContent || markdownContent.trim().length === 0) {
+      throw new Error('No content could be extracted from the file');
     }
 
-    // Chunk the text
-    const chunks = chunkText(text, 1000, 200); // 1000 chars per chunk, 200 char overlap
+    console.log(`Extracted Markdown length: ${markdownContent.length} characters`);
+
+    // Chunk the Markdown content with semantic chunking
+    const chunks = chunkMarkdown(markdownContent, 1000, 200);
     
-    console.log(`Extracted ${text.length} characters, created ${chunks.length} chunks`);
+    console.log(`Extracted ${markdownContent.length} characters, created ${chunks.length} chunks`);
 
     // Process chunks in batches to avoid rate limits
     const batchSize = 5;
@@ -140,7 +144,93 @@ serve(async (req) => {
   }
 });
 
-async function extractTextFromFile(fileData: Blob, filePath: string): Promise<string> {
+// Convert file to Markdown using Unstructured.io
+async function convertToMarkdownWithUnstructured(fileData: Blob, filePath: string): Promise<string> {
+  const fileName = filePath.split('/').pop() || '';
+  
+  // If Unstructured API key is not available, fallback to original method
+  if (!unstructuredApiKey) {
+    console.log('Unstructured API key not found, falling back to original extraction');
+    return await extractTextFromFileFallback(fileData, filePath);
+  }
+  
+  try {
+    console.log(`Converting ${fileName} to Markdown using Unstructured.io`);
+    
+    // Create form data for the API request
+    const formData = new FormData();
+    formData.append('files', fileData, fileName);
+    formData.append('strategy', 'hi_res'); // High resolution for better quality
+    formData.append('output_format', 'text/markdown');
+    formData.append('chunking_strategy', 'none'); // We'll handle chunking ourselves
+    
+    // Make request to Unstructured.io API
+    const response = await fetch('https://api.unstructured.io/general/v0/general', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${unstructuredApiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Unstructured.io API error:', response.status, errorText);
+      console.log('Falling back to original extraction method');
+      return await extractTextFromFileFallback(fileData, filePath);
+    }
+
+    const result = await response.json();
+    console.log('Unstructured.io response received, elements:', result.length);
+    
+    // Convert the structured elements to Markdown
+    let markdownContent = '';
+    
+    for (const element of result) {
+      if (element.text && element.text.trim()) {
+        // Add appropriate formatting based on element type
+        switch (element.type) {
+          case 'Title':
+            markdownContent += `# ${element.text}\n\n`;
+            break;
+          case 'Header':
+            markdownContent += `## ${element.text}\n\n`;
+            break;
+          case 'SubHeader':
+            markdownContent += `### ${element.text}\n\n`;
+            break;
+          case 'Table':
+            markdownContent += `${element.text}\n\n`;
+            break;
+          case 'ListItem':
+            markdownContent += `- ${element.text}\n`;
+            break;
+          case 'NarrativeText':
+          case 'Text':
+          default:
+            markdownContent += `${element.text}\n\n`;
+            break;
+        }
+      }
+    }
+    
+    if (!markdownContent.trim()) {
+      console.log('No content extracted from Unstructured.io, falling back');
+      return await extractTextFromFileFallback(fileData, filePath);
+    }
+    
+    console.log(`Successfully converted to Markdown: ${markdownContent.length} characters`);
+    return markdownContent.trim();
+    
+  } catch (error) {
+    console.error('Error converting to Markdown with Unstructured.io:', error);
+    console.log('Falling back to original extraction method');
+    return await extractTextFromFileFallback(fileData, filePath);
+  }
+}
+
+// Fallback text extraction (original logic)
+async function extractTextFromFileFallback(fileData: Blob, filePath: string): Promise<string> {
   const fileName = filePath.toLowerCase();
   
   // Handle plain text files
@@ -391,6 +481,77 @@ interface TextChunk {
   endIndex: number;
 }
 
+// Enhanced Markdown-aware chunking
+function chunkMarkdown(markdown: string, maxChunkSize: number, overlap: number): TextChunk[] {
+  const chunks: TextChunk[] = [];
+  
+  // Split by major sections (headers)
+  const sections = markdown.split(/(?=^#{1,6}\s)/gm).filter(s => s.trim().length > 0);
+  
+  let currentStartIndex = 0;
+  
+  for (const section of sections) {
+    if (section.length <= maxChunkSize) {
+      // Section fits in one chunk
+      chunks.push({
+        content: section.trim(),
+        startIndex: currentStartIndex,
+        endIndex: currentStartIndex + section.length
+      });
+    } else {
+      // Need to split section further
+      const sectionChunks = chunkLargeMarkdownSection(section, maxChunkSize, overlap, currentStartIndex);
+      chunks.push(...sectionChunks);
+    }
+    currentStartIndex += section.length;
+  }
+  
+  return chunks;
+}
+
+function chunkLargeMarkdownSection(section: string, maxChunkSize: number, overlap: number, sectionStartIndex: number): TextChunk[] {
+  const chunks: TextChunk[] = [];
+  
+  // Try to split by paragraphs first
+  const paragraphs = section.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+  
+  let currentChunk = '';
+  let currentStartIndex = sectionStartIndex;
+  
+  for (const paragraph of paragraphs) {
+    const potentialChunk = currentChunk + (currentChunk ? '\n\n' : '') + paragraph;
+    
+    if (potentialChunk.length > maxChunkSize && currentChunk.length > 0) {
+      // Save current chunk
+      chunks.push({
+        content: currentChunk.trim(),
+        startIndex: currentStartIndex,
+        endIndex: currentStartIndex + currentChunk.length
+      });
+      
+      // Start new chunk with overlap (try to include header if present)
+      const lines = currentChunk.trim().split('\n');
+      const headerLine = lines.find(line => line.match(/^#{1,6}\s/));
+      currentChunk = (headerLine ? headerLine + '\n\n' : '') + paragraph;
+      currentStartIndex += currentChunk.length - currentChunk.length; // Reset for new chunk
+    } else {
+      currentChunk = potentialChunk;
+    }
+  }
+  
+  // Add final chunk if it has content
+  if (currentChunk.trim().length > 0) {
+    chunks.push({
+      content: currentChunk.trim(),
+      startIndex: currentStartIndex,
+      endIndex: currentStartIndex + currentChunk.length
+    });
+  }
+  
+  return chunks;
+}
+
+// Legacy text chunking for fallback
 function chunkText(text: string, maxChunkSize: number, overlap: number): TextChunk[] {
   const chunks: TextChunk[] = [];
   let startIndex = 0;
