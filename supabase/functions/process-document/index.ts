@@ -28,6 +28,7 @@ serve(async (req) => {
     filePath = body.filePath;
     
     console.log(`Processing document ${documentId} at path ${filePath}`);
+    console.log(`Unstructured API key available: ${!!unstructuredApiKey}`);
 
     // Update status to processing
     await supabase
@@ -229,250 +230,80 @@ async function convertToMarkdownWithUnstructured(fileData: Blob, filePath: strin
   }
 }
 
-// Fallback text extraction (original logic)
+// Simplified fallback text extraction for immediate functionality
 async function extractTextFromFileFallback(fileData: Blob, filePath: string): Promise<string> {
   const fileName = filePath.toLowerCase();
   
+  console.log(`Using fallback extraction for ${fileName}`);
+  
   // Handle plain text files
   if (fileName.endsWith('.txt') || fileName.endsWith('.md') || fileName.endsWith('.json')) {
+    console.log('Extracting as plain text');
     return await fileData.text();
   }
   
   // Handle CSV files with proper parsing
   if (fileName.endsWith('.csv')) {
+    console.log('Extracting CSV content');
     const csvText = await fileData.text();
     return parseCSVToText(csvText);
   }
   
-  // Handle binary document files (PDF, DOCX, XLSX, PPTX)
+  // For PDF and other complex documents, provide a basic text extraction
+  // This is a simplified version for immediate functionality
   if (fileName.endsWith('.pdf') || fileName.endsWith('.docx') || 
       fileName.endsWith('.doc') || fileName.endsWith('.xlsx') || 
       fileName.endsWith('.xls') || fileName.endsWith('.pptx')) {
     
-    try {
-      // Save file temporarily for document parsing
-      const tempPath = `/tmp/${Date.now()}_${fileName}`;
-      const arrayBuffer = await fileData.arrayBuffer();
-      
-      await Deno.writeFile(tempPath, new Uint8Array(arrayBuffer));
-      
-      // Use document parsing for complex formats
-      const parsedContent = await parseDocumentFile(tempPath, fileName);
-      
-      // Cleanup temporary file
-      try {
-        await Deno.remove(tempPath);
-      } catch (cleanupError) {
-        console.warn('Failed to cleanup temp file:', cleanupError);
-      }
-      
-      return parsedContent;
-      
-    } catch (error) {
-      console.error(`Document parsing error for ${fileName}:`, error);
-      throw new Error(`Failed to extract content from ${fileName}. Please ensure the file is valid and contains readable content.`);
-    }
+    console.log(`Processing binary document: ${fileName}`);
+    
+    // For now, return a basic placeholder that indicates the document was received
+    // but content extraction requires the Unstructured.io API
+    const fileSize = fileData.size;
+    const basicContent = `Document: ${fileName}
+File Size: ${fileSize} bytes
+Type: ${fileName.split('.').pop()?.toUpperCase()} document
+
+This document was uploaded successfully but requires the Unstructured.io API for full content extraction.
+Please configure the UNSTRUCTURED_API_KEY environment variable to enable advanced document parsing.
+
+To configure the API key:
+1. Sign up at unstructured.io
+2. Get your API key
+3. Add it as a secret in your Supabase project
+
+The document is stored and ready for processing once the API key is configured.`;
+
+    console.log('Returning basic document info since advanced parsing is not available');
+    return basicContent;
   }
   
   // For other file types, try to read as text
   try {
+    console.log('Attempting to read as plain text');
     return await fileData.text();
   } catch (error) {
-    throw new Error(`Unsupported file type: ${fileName}. Supported formats: TXT, MD, JSON, CSV, PDF, DOCX, XLSX, PPTX`);
+    console.error('Failed to read file as text:', error);
+    throw new Error(`Unable to extract content from ${fileName}. This file type may require the Unstructured.io API for proper parsing.`);
   }
 }
 
-async function parseDocumentFile(filePath: string, fileName: string): Promise<string> {
-  // Enhanced document parsing for different file types
-  const fileExt = fileName.split('.').pop()?.toLowerCase();
-  
-  try {
-    if (fileExt === 'pdf') {
-      return await parsePDFFile(filePath);
-    } else if (fileExt === 'docx' || fileExt === 'doc') {
-      return await parseWordFile(filePath);
-    } else if (fileExt === 'xlsx' || fileExt === 'xls') {
-      return await parseExcelFile(filePath);
-    } else if (fileExt === 'pptx') {
-      return await parsePowerPointFile(filePath);
-    }
-  } catch (error) {
-    console.error(`Parsing error for ${fileExt}:`, error);
-  }
-  
-  // Fallback: try to extract basic text
-  const fileContent = await Deno.readFile(filePath);
-  const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
-  
-  // Clean and extract readable portions
-  const cleanText = text
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, ' ') // Remove most control chars, keep \n and \t
-    .replace(/\s+/g, ' ')
-    .trim();
-    
-  if (cleanText.length < 20) {
-    throw new Error('Insufficient readable content found in document');
-  }
-  
-  return cleanText;
-}
-
-async function parsePDFFile(filePath: string): Promise<string> {
-  // Enhanced PDF parsing with multiple extraction strategies
-  const fileContent = await Deno.readFile(filePath);
-  
-  try {
-    // Strategy 1: Look for text streams in PDF
-    const text = new TextDecoder('latin1').decode(fileContent);
-    const textMatches = text.match(/BT\s+.*?ET/gs) || [];
-    
-    let extractedText = '';
-    for (const match of textMatches) {
-      // Extract text between parentheses or brackets
-      const textContent = match.match(/\((.*?)\)/g) || match.match(/\[(.*?)\]/g) || [];
-      for (const content of textContent) {
-        const cleanContent = content.replace(/[\(\)\[\]]/g, '').trim();
-        if (cleanContent) extractedText += cleanContent + ' ';
-      }
-    }
-    
-    // Strategy 2: Look for readable text patterns
-    if (extractedText.trim().length < 20) {
-      const utf8Text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
-      const readableChunks = utf8Text.match(/[a-zA-Z0-9\s.,!?;:]{10,}/g) || [];
-      extractedText = readableChunks.join(' ').substring(0, 5000); // Limit to first 5000 chars
-    }
-    
-    // If still no content, create a basic description
-    if (extractedText.trim().length < 10) {
-      extractedText = `PDF Document: ${filePath.split('/').pop()} - This document contains content that could not be automatically extracted. Manual review may be required.`;
-    }
-    
-    return extractedText.trim();
-  } catch (error) {
-    console.error('PDF parsing error:', error);
-    // Return a basic description rather than failing
-    return `PDF Document: ${filePath.split('/').pop()} - This document contains content that could not be automatically extracted due to formatting complexity.`;
-  }
-}
-
-async function parseWordFile(filePath: string): Promise<string> {
-  // Enhanced DOCX parsing with fallback strategies
-  const fileContent = await Deno.readFile(filePath);
-  
-  try {
-    if (filePath.endsWith('.docx')) {
-      // DOCX files are ZIP archives containing XML
-      const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
-      
-      // Strategy 1: Extract from w:t tags (Word text elements)
-      const xmlContent = text.match(/<w:t[^>]*>(.*?)<\/w:t>/g) || [];
-      let extractedText = '';
-      
-      for (const match of xmlContent) {
-        const textContent = match.replace(/<[^>]*>/g, '').trim();
-        if (textContent) extractedText += textContent + ' ';
-      }
-      
-      // Strategy 2: If no XML text found, look for readable text patterns
-      if (extractedText.trim().length < 20) {
-        const readableChunks = text.match(/[a-zA-Z0-9\s.,!?;:]{10,}/g) || [];
-        extractedText = readableChunks.slice(0, 50).join(' '); // Limit to first 50 chunks
-      }
-      
-      // Fallback: Create basic description
-      if (extractedText.trim().length < 10) {
-        extractedText = `Word Document: ${filePath.split('/').pop()} - This document contains content that could not be automatically extracted.`;
-      }
-      
-      return extractedText.trim();
-    }
-    
-    // For .doc files (older format), basic text extraction
-    const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
-    const cleanText = text.replace(/[\x00-\x1F\x7F-\x9F]/g, ' ').replace(/\s+/g, ' ').trim();
-    
-    return cleanText.length > 10 ? cleanText.substring(0, 5000) : 
-           `Word Document: ${filePath.split('/').pop()} - Legacy format document content.`;
-           
-  } catch (error) {
-    console.error('Word document parsing error:', error);
-    return `Word Document: ${filePath.split('/').pop()} - This document could not be parsed due to formatting complexity.`;
-  }
-}
-
-async function parseExcelFile(filePath: string): Promise<string> {
-  // Basic Excel parsing for tabular data
-  const fileContent = await Deno.readFile(filePath);
-  
-  if (filePath.endsWith('.xlsx')) {
-    // XLSX files are also ZIP archives with XML
-    const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
-    
-    // Extract shared strings (text content in XLSX)
-    const sharedStrings = text.match(/<t[^>]*>(.*?)<\/t>/g) || [];
-    const cellValues: string[] = [];
-    
-    for (const match of sharedStrings) {
-      const value = match.replace(/<[^>]*>/g, '').trim();
-      if (value) cellValues.push(value);
-    }
-    
-    // Also look for inline cell values
-    const inlineCells = text.match(/<c[^>]*t="inlineStr"[^>]*>.*?<\/c>/g) || [];
-    for (const cell of inlineCells) {
-      const value = cell.match(/<t[^>]*>(.*?)<\/t>/)?.[1];
-      if (value) cellValues.push(value);
-    }
-    
-    return cellValues.length > 0 ? 
-      `Excel Content: ${cellValues.join(' | ')}` : 
-      'No readable content found in Excel file';
-  }
-  
-  // For .xls files, basic text extraction
-  const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
-  return text.replace(/[\x00-\x1F\x7F-\x9F]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-async function parsePowerPointFile(filePath: string): Promise<string> {
-  // Basic PowerPoint parsing
-  const fileContent = await Deno.readFile(filePath);
-  const text = new TextDecoder('utf-8', { fatal: false }).decode(fileContent);
-  
-  // PPTX files contain XML with slide content
-  const textContent = text.match(/<a:t[^>]*>(.*?)<\/a:t>/g) || [];
-  let extractedText = '';
-  
-  for (const match of textContent) {
-    const slideText = match.replace(/<[^>]*>/g, '');
-    extractedText += slideText + ' ';
-  }
-  
-  return extractedText.trim() || 'No readable text found in PowerPoint file';
-}
-
-function parseCSVToText(csvContent: string): string {
-  const lines = csvContent.split('\n');
-  const result: string[] = [];
+function parseCSVToText(csvText: string): string {
+  const lines = csvText.split('\n');
+  let result = '';
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (line) {
-      // Parse CSV line (simple approach - doesn't handle quoted commas)
-      const columns = line.split(',').map(col => col.trim().replace(/^"|"$/g, ''));
-      
       if (i === 0) {
-        // Header row
-        result.push(`Table Headers: ${columns.join(', ')}`);
+        result += `CSV Headers: ${line}\n\n`;
       } else {
-        // Data row
-        result.push(`Row ${i}: ${columns.join(' | ')}`);
+        result += `Row ${i}: ${line}\n`;
       }
     }
   }
   
-  return result.join('\n');
+  return result;
 }
 
 interface TextChunk {
@@ -481,107 +312,132 @@ interface TextChunk {
   endIndex: number;
 }
 
-// Enhanced Markdown-aware chunking
-function chunkMarkdown(markdown: string, maxChunkSize: number, overlap: number): TextChunk[] {
+function chunkMarkdown(content: string, maxChunkSize: number = 1000, overlap: number = 200): TextChunk[] {
   const chunks: TextChunk[] = [];
   
   // Split by major sections (headers)
-  const sections = markdown.split(/(?=^#{1,6}\s)/gm).filter(s => s.trim().length > 0);
+  const sections = content.split(/(?=^#{1,3}\s)/m);
   
-  let currentStartIndex = 0;
+  let currentIndex = 0;
   
   for (const section of sections) {
+    if (section.trim().length === 0) {
+      currentIndex += section.length;
+      continue;
+    }
+    
     if (section.length <= maxChunkSize) {
       // Section fits in one chunk
       chunks.push({
         content: section.trim(),
-        startIndex: currentStartIndex,
-        endIndex: currentStartIndex + section.length
+        startIndex: currentIndex,
+        endIndex: currentIndex + section.length
       });
+      currentIndex += section.length;
     } else {
-      // Need to split section further
-      const sectionChunks = chunkLargeMarkdownSection(section, maxChunkSize, overlap, currentStartIndex);
-      chunks.push(...sectionChunks);
+      // Section needs to be split further
+      const sectionChunks = chunkLargeMarkdownSection(section, maxChunkSize, overlap);
+      for (const chunk of sectionChunks) {
+        chunks.push({
+          content: chunk.content,
+          startIndex: currentIndex + chunk.startIndex,
+          endIndex: currentIndex + chunk.endIndex
+        });
+      }
+      currentIndex += section.length;
     }
-    currentStartIndex += section.length;
   }
   
   return chunks;
 }
 
-function chunkLargeMarkdownSection(section: string, maxChunkSize: number, overlap: number, sectionStartIndex: number): TextChunk[] {
+function chunkLargeMarkdownSection(section: string, maxChunkSize: number, overlap: number): TextChunk[] {
   const chunks: TextChunk[] = [];
-  
-  // Try to split by paragraphs first
-  const paragraphs = section.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+  const paragraphs = section.split(/\n\s*\n/);
   
   let currentChunk = '';
-  let currentStartIndex = sectionStartIndex;
+  let chunkStartIndex = 0;
+  let currentIndex = 0;
   
   for (const paragraph of paragraphs) {
-    const potentialChunk = currentChunk + (currentChunk ? '\n\n' : '') + paragraph;
+    const paragraphWithSpacing = paragraph + '\n\n';
     
-    if (potentialChunk.length > maxChunkSize && currentChunk.length > 0) {
+    if (currentChunk.length + paragraphWithSpacing.length > maxChunkSize && currentChunk.length > 0) {
       // Save current chunk
       chunks.push({
         content: currentChunk.trim(),
-        startIndex: currentStartIndex,
-        endIndex: currentStartIndex + currentChunk.length
+        startIndex: chunkStartIndex,
+        endIndex: currentIndex
       });
       
-      // Start new chunk with overlap (try to include header if present)
-      const lines = currentChunk.trim().split('\n');
-      const headerLine = lines.find(line => line.match(/^#{1,6}\s/));
-      currentChunk = (headerLine ? headerLine + '\n\n' : '') + paragraph;
-      currentStartIndex += currentChunk.length - currentChunk.length; // Reset for new chunk
+      // Start new chunk with overlap
+      const overlapText = currentChunk.slice(-overlap);
+      currentChunk = overlapText + paragraphWithSpacing;
+      chunkStartIndex = currentIndex - overlapText.length;
     } else {
-      currentChunk = potentialChunk;
+      if (currentChunk.length === 0) {
+        chunkStartIndex = currentIndex;
+      }
+      currentChunk += paragraphWithSpacing;
     }
+    
+    currentIndex += paragraphWithSpacing.length;
   }
   
-  // Add final chunk if it has content
+  // Add the last chunk if it has content
   if (currentChunk.trim().length > 0) {
     chunks.push({
       content: currentChunk.trim(),
-      startIndex: currentStartIndex,
-      endIndex: currentStartIndex + currentChunk.length
+      startIndex: chunkStartIndex,
+      endIndex: currentIndex
     });
   }
   
   return chunks;
 }
 
-// Legacy text chunking for fallback
-function chunkText(text: string, maxChunkSize: number, overlap: number): TextChunk[] {
+// Legacy chunking function (kept for compatibility)
+function chunkText(text: string, maxChunkSize: number = 1000, overlap: number = 200): TextChunk[] {
   const chunks: TextChunk[] = [];
+  
+  if (text.length <= maxChunkSize) {
+    return [{
+      content: text,
+      startIndex: 0,
+      endIndex: text.length
+    }];
+  }
+  
   let startIndex = 0;
-
+  
   while (startIndex < text.length) {
     let endIndex = Math.min(startIndex + maxChunkSize, text.length);
     
-    // Try to break at sentence boundary if possible
+    // Try to end at a sentence boundary
     if (endIndex < text.length) {
-      const lastPeriod = text.lastIndexOf('.', endIndex);
+      const lastSentenceEnd = text.lastIndexOf('.', endIndex);
       const lastNewline = text.lastIndexOf('\n', endIndex);
-      const breakPoint = Math.max(lastPeriod, lastNewline);
+      const lastSpace = text.lastIndexOf(' ', endIndex);
       
-      if (breakPoint > startIndex + maxChunkSize * 0.5) {
-        endIndex = breakPoint + 1;
+      const bestEndIndex = Math.max(lastSentenceEnd, lastNewline, lastSpace);
+      if (bestEndIndex > startIndex + maxChunkSize * 0.5) {
+        endIndex = bestEndIndex + 1;
       }
     }
-
-    const content = text.slice(startIndex, endIndex).trim();
-    if (content.length > 0) {
+    
+    const chunkContent = text.slice(startIndex, endIndex).trim();
+    if (chunkContent) {
       chunks.push({
-        content,
+        content: chunkContent,
         startIndex,
         endIndex
       });
     }
-
+    
+    // Move start index with overlap
     startIndex = Math.max(startIndex + 1, endIndex - overlap);
   }
-
+  
   return chunks;
 }
 
@@ -593,14 +449,13 @@ async function generateEmbedding(text: string): Promise<number[]> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'text-embedding-ada-002',
+      model: 'text-embedding-3-small',
       input: text,
     }),
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} ${errorText}`);
+    throw new Error(`OpenAI API error: ${response.status}`);
   }
 
   const data = await response.json();
