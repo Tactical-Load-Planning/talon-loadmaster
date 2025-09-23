@@ -22,7 +22,7 @@ const Chat = () => {
     {
       id: '1',
       role: 'assistant',
-      content: "Hello! I'm TALON, your military vehicle load planning assistant. I can help you with load plans, equipment considerations, munition specifications, and transportation operations. How can I assist you today?",
+      content: "Hello! I'm TALON, your Tactical Allocation & Logistics Optimization Network. I can help you with load plans, equipment considerations, munition specifications, and transportation operations. How can I assist you today?",
       timestamp: new Date(),
     }
   ]);
