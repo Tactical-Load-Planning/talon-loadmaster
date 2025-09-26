@@ -39,19 +39,12 @@ All colors MUST be HSL.
     --radius: 0.5rem;
 
     --sidebar-background: 0 0% 98%;
-
     --sidebar-foreground: 240 5.3% 26.1%;
-
     --sidebar-primary: 240 5.9% 10%;
-
     --sidebar-primary-foreground: 0 0% 98%;
-
     --sidebar-accent: 240 4.8% 95.9%;
-
     --sidebar-accent-foreground: 240 5.9% 10%;
-
     --sidebar-border: 220 13% 91%;
-
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
@@ -100,6 +93,18 @@ All colors MUST be HSL.
   }
 
   body {
+    /* keeps your semantic bg/text from the design system */
     @apply bg-background text-foreground;
+
+    /* VERY LIGHT CAMO BACKGROUND
+       - put your camo file in /public/images/camo.png (or update the path)
+       - the linear-gradient acts as a translucent wash so the camo stays subtle
+    */
+    background-image:
+      linear-gradient(hsl(var(--background) / 0.94), hsl(var(--background) / 0.94)),
+      url('/images/camo.png');
+    background-repeat: repeat;
+    background-size: 480px auto;   /* adjust tile size if desired */
+    background-attachment: fixed;  /* keeps pattern anchored while scrolling */
   }
 }
