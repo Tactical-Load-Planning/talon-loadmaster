@@ -92,15 +92,20 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
-  body {
-    @apply bg-background text-foreground;
-
-    /* CAMO BACKGROUND (tile should be at /public/camo.png) */
+  /* Put the camo on the root so wrapper divs can't cover it */
+  html {
     background-image:
+      /* subtle white wash over the pattern */
       linear-gradient(hsl(var(--background) / 0.94), hsl(var(--background) / 0.94)),
-      url('/camo.png');              /* <-- make sure this file exists at /public/camo.png */
+      url('/camo.png'); /* file lives at /public/camo.png */
     background-repeat: repeat;
-    background-size: 480px auto;     /* tweak tile size as you like */
+    background-size: 480px auto;
     background-attachment: fixed;
+  }
+
+  /* Make body transparent so the html background shows through */
+  body {
+    background-color: transparent;
+    @apply text-foreground;
   }
 }
