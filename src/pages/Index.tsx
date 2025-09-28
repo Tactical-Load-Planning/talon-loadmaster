@@ -2,6 +2,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
+import talonLogo from '@/assets/talon-logo.png';
 
 const Index = () => {
   const { user, signOut } = useAuth();
@@ -12,9 +13,16 @@ const Index = () => {
       <div className="max-w-4xl mx-auto">
         {/* Header with user info and logout */}
         <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold">TALON</h1>
-            <p className="text-muted-foreground">Military Vehicle Load Planning Assistant</p>
+          <div className="flex items-center gap-4">
+            <img 
+              src={talonLogo} 
+              alt="TALON Logo" 
+              className="w-16 h-16"
+            />
+            <div>
+              <h1 className="text-3xl font-bold">TALON</h1>
+              <p className="text-muted-foreground">Military Vehicle Load Planning Assistant</p>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground">
