@@ -96,7 +96,7 @@ All colors MUST be HSL.
   html {
     background-image:
       /* subtle white wash over the pattern */
-      linear-gradient(hsl(var(--background) / 0.94), hsl(var(--background) / 0.94)),
+      linear-gradient(hsl(var(--background) / 0.70), hsl(var(--background) / 0.70)),
       url('/camo.png'); /* file lives at /public/camo.png */
     background-repeat: repeat;
     background-size: 480px auto;
