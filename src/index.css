@@ -72,14 +72,14 @@
   /* 1) Paint camo on the root html element */
   html {
     background-image:
-      linear-gradient(hsl(var(--background) / 0.55), hsl(var(--background) / 0.55)),
+      linear-gradient(hsl(var(--background) / 0.75), hsl(var(--background) / 0.75)),
       url('/camo.png'); /* file in /public/camo.png */
     background-repeat: repeat;
     background-size: 300px auto;   /* smaller tiles for better blending */
     background-attachment: fixed;
     background-blend-mode: multiply;
     image-rendering: auto;
-    filter: blur(0.5px);  /* subtle blur to reduce harsh edges */
+    filter: blur(2px);  /* stronger blur for smoother appearance */
   }
 
   /* 2) Make body and common wrappers transparent so camo shows through */
@@ -91,5 +91,17 @@
   /* Kill accidental page-wide backgrounds from common shells */
   #root, #app, main, .app, .page, .min-h-screen, .w-screen, .h-screen {
     background: transparent !important;
+  }
+
+  /* Enhance text contrast for better readability over camo */
+  h1, h2, h3, h4, h5, h6 {
+    text-shadow: 0 1px 3px hsl(var(--background) / 0.8);
+    font-weight: 700;
+  }
+
+  .card {
+    background: hsl(var(--card) / 0.95) !important;
+    backdrop-filter: blur(4px);
+    border: 1px solid hsl(var(--border) / 0.5);
   }
 }
