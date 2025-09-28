@@ -93,18 +93,14 @@ All colors MUST be HSL.
   }
 
   body {
-    /* keeps your semantic bg/text from the design system */
     @apply bg-background text-foreground;
 
-    /* VERY LIGHT CAMO BACKGROUND
-       - put your camo file in /public/images/camo.png (or update the path)
-       - the linear-gradient acts as a translucent wash so the camo stays subtle
-    */
+    /* CAMO BACKGROUND (tile should be at /public/camo.png) */
     background-image:
       linear-gradient(hsl(var(--background) / 0.94), hsl(var(--background) / 0.94)),
-      url('/images/camo.png');
+      url('/camo.png');              /* <-- make sure this file exists at /public/camo.png */
     background-repeat: repeat;
-    background-size: 480px auto;   /* adjust tile size if desired */
-    background-attachment: fixed;  /* keeps pattern anchored while scrolling */
+    background-size: 480px auto;     /* tweak tile size as you like */
+    background-attachment: fixed;
   }
 }
