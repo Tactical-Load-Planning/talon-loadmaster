@@ -72,11 +72,14 @@
   /* 1) Paint camo on the root html element */
   html {
     background-image:
-      linear-gradient(hsl(var(--background) / 0.80), hsl(var(--background) / 0.80)),
+      linear-gradient(hsl(var(--background) / 0.55), hsl(var(--background) / 0.55)),
       url('/camo.png'); /* file in /public/camo.png */
     background-repeat: repeat;
-    background-size: 480px auto;   /* adjust tile size as desired */
+    background-size: 300px auto;   /* smaller tiles for better blending */
     background-attachment: fixed;
+    background-blend-mode: multiply;
+    image-rendering: auto;
+    filter: blur(0.5px);  /* subtle blur to reduce harsh edges */
   }
 
   /* 2) Make body and common wrappers transparent so camo shows through */
