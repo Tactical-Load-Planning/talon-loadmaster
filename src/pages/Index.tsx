@@ -21,7 +21,7 @@ const Index = () => {
             />
             <div>
               <h1 className="text-3xl font-bold">TALON</h1>
-              <p className="text-muted-foreground">Military Vehicle Load Planning Assistant</p>
+              <p className="text-3xl font-bold">Tactical Allocation & Logistics Optimization Network</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
